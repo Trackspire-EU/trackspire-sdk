@@ -11,16 +11,15 @@ export function initWebVitals(): void {
 
     const data: WebVitalsData = { lcp: null, cls: null, inp: null, fcp: null, ttfb: null };
     let sent = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const sendData = () => {
         if (sent) return;
-        sent = true;
 
-        if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-        }
+        // Nothing measured yet, e.g. a tab that was opened in the background and closed again
+        const hasAnyMetric = Object.values(data).some(value => value !== null);
+        if (!hasAnyMetric) return;
+
+        sent = true;
 
         track("performance", { eventName: "web-vitals", webVitals: data });
     };
@@ -44,10 +43,16 @@ export function initWebVitals(): void {
         onFCP(collectMetric);
         onTTFB(collectMetric);
 
-        // Send metrics even if not all are collected within a reasonable time.
-        timeoutId = setTimeout(sendData, 20000);
+        // LCP, CLS and INP are only final once the page is hidden. The library reports them in its own
+        // visibilitychange listeners, which were registered above and therefore run before this one.
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "hidden") {
+                sendData();
+            }
+        });
 
-        window.addEventListener("beforeunload", sendData);
+        // Fallback for browsers that unload without a preceding visibilitychange
+        window.addEventListener("pagehide", sendData);
     } catch (e) {
         logError("Error initializing web vitals tracking:", e);
     }
